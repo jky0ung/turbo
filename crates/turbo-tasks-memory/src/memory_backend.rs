@@ -335,7 +335,7 @@ impl MemoryBackend {
                     current_task = item.task();
                     current_unread = false;
                     current_unload = false;
-                    current_cells = Vec::new();
+                    current_cells.truncate(0);
                 }
                 match item.action {
                     GcAction::UnreadCells(_) => current_unread = true,
