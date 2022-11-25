@@ -1174,6 +1174,7 @@ impl Task {
                 self.remove_self_from_scope_full(state, id, backend, turbo_tasks);
             }
             TaskMetaStateWriteGuard::Partial(_) => backend.with_scope(id, |scope| {
+                scope.decrement_tasks();
                 scope.decrement_unfinished_tasks(backend);
                 let mut scope = scope.state.lock();
                 scope.remove_dirty_task(self.id);
@@ -2123,6 +2124,9 @@ impl Task {
 
             let scopes = match scopes {
                 TaskScopes::Root(root_scope) => {
+                    backend.with_scope(root_scope, |scope| {
+                        scope.decrement_tasks();
+                    });
                     let job = backend.create_backend_job(Job::UnloadRootScope(root_scope));
                     turbo_tasks.schedule_backend_foreground_job(job);
                     None
