@@ -1,6 +1,5 @@
 use std::{
     alloc::{GlobalAlloc, Layout},
-    ptr,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -16,7 +15,10 @@ impl TurboMalloc {
 
 static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
 
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
+#[cfg(all(
+    feature = "custom_allocator",
+    not(all(target_os = "linux", target_arch = "aarch64"))
+))]
 unsafe impl GlobalAlloc for TurboMalloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ret = mimalloc::MiMalloc.alloc(layout);
@@ -53,7 +55,10 @@ unsafe impl GlobalAlloc for TurboMalloc {
     }
 }
 
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
+#[cfg(any(
+    not(feature = "custom_allocator"),
+    all(target_os = "linux", target_arch = "aarch64")
+))]
 unsafe impl GlobalAlloc for TurboMalloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ret = std::alloc::System.alloc(layout);
