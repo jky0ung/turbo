@@ -102,11 +102,6 @@ impl ContentSource for TurboTasksSource {
                 });
                 "Done".to_string()
             }
-            "gc" => {
-                let b = tt.backend();
-                b.run_gc(&**tt);
-                "Done".to_string()
-            }
             _ => return Ok(ContentSourceResultVc::not_found()),
         };
         Ok(ContentSourceResultVc::exact(
