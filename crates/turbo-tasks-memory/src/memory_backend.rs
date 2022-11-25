@@ -225,6 +225,11 @@ impl MemoryBackend {
         let usage = turbo_malloc::TurboMalloc::memory_usage();
 
         if usage < UPPER_MEM_TARGET {
+            println!(
+                "No GC needed {:.3} GB ({} tasks in queue)",
+                (usage / 1000_000) as f32 / 1000.0,
+                self.gc_queue.len()
+            );
             return;
         }
 
