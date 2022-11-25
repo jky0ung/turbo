@@ -37,6 +37,10 @@ impl<'a, T: 'a, U: 'a, M: 'a + Fn(&T) -> &U, MM: 'a + Fn(&mut T) -> &mut U>
             map_mut,
         }
     }
+
+    pub fn into_inner(self) -> RwLockWriteGuard<'a, T> {
+        self.inner
+    }
 }
 
 impl<'a, T: 'a, U: 'a, M: 'a + Fn(&T) -> &U, MM: 'a + Fn(&mut T) -> &mut U> Deref

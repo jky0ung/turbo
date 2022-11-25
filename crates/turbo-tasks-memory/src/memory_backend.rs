@@ -324,7 +324,7 @@ impl MemoryBackend {
                                 return;
                             }
                         }
-                        task.gc(current_unread, current_cells);
+                        task.gc(current_unread, &current_cells);
                     });
                 };
             }
@@ -768,6 +768,9 @@ pub(crate) enum Job {
     /// Remove tasks from a scope. Scheduled by `run_remove_from_scope_queue` to
     /// split off work.
     RemoveFromScopeQueue(VecDeque<TaskId>, TaskScopeId),
+    /// Unloads a previously used root scope after all other foreground tasks
+    /// are done.
+    UnloadRootScope(TaskScopeId),
     GarbaggeCollection,
 }
 
@@ -807,6 +810,17 @@ impl Job {
             }
             Job::RemoveFromScopeQueue(queue, id) => {
                 run_remove_from_scope_queue(queue, id, backend, turbo_tasks);
+            }
+            Job::UnloadRootScope(id) => {
+                if let Some(future) = turbo_tasks.wait_foreground_done_excluding_own() {
+                    future.await;
+                }
+                backend.with_scope(id, |scope| {
+                    scope.assert_unused();
+                });
+                unsafe {
+                    backend.scope_id_factory.reuse(id);
+                }
             }
             Job::GarbaggeCollection => {
                 backend.run_gc(turbo_tasks);

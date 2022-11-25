@@ -142,6 +142,9 @@ pub trait TurboTasksBackendApi: TaskIdProvider + TurboTasksCallApi + Sync + Send
     fn schedule_backend_foreground_job(&self, id: BackendJobId);
 
     fn try_foreground_done(&self) -> Result<(), EventListener>;
+    fn wait_foreground_done_excluding_own<'a>(
+        &'a self,
+    ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + 'a>>>;
 
     /// Enqueues tasks for notification of changed dependencies. This will
     /// eventually call `invalidate_tasks()` on all tasks.
@@ -851,6 +854,23 @@ impl<B: Backend> TurboTasksBackendApi for TurboTasks<B> {
             return Ok(());
         }
         Err(listener)
+    }
+
+    fn wait_foreground_done_excluding_own<'a>(
+        &'a self,
+    ) -> Option<Pin<Box<dyn Future<Output = ()> + Send + 'a>>> {
+        if self
+            .currently_scheduled_foreground_jobs
+            .load(Ordering::Acquire)
+            == 0
+        {
+            return None;
+        }
+        Some(Box::pin(async {
+            self.finish_foreground_job();
+            self.wait_foreground_done().await;
+            self.begin_foreground_job();
+        }))
     }
 
     /// Enqueues tasks for notification of changed dependencies. This will

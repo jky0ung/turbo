@@ -1268,8 +1268,19 @@ impl Task {
                         queue.reserve(max(children.len(), SPLIT_OFF_QUEUE_AT * 2));
                     }
                     queue.extend(children.iter().copied());
+                    let unset = set.is_unset();
                     self.remove_self_from_scope(&mut state, id, backend, turbo_tasks);
-                    drop(state);
+                    if unset {
+                        if let TaskMetaStateWriteGuard::Partial(state) = state {
+                            state.event.notify(usize::MAX);
+                            let mut state = state.into_inner();
+                            *state = TaskMetaState::None;
+                        } else {
+                            drop(state);
+                        }
+                    } else {
+                        drop(state);
+                    }
                 }
             }
         }
@@ -2000,7 +2011,7 @@ impl Task {
         }
     }
 
-    pub(crate) fn gc(&self, unread_cells: bool, cells: Vec<CellId>) {
+    pub(crate) fn gc(&self, unread_cells: bool, cells: &[CellId]) {
         assert!(self.is_pure());
         if let TaskMetaStateWriteGuard::Full(mut state) = self.state_mut() {
             if unread_cells {
@@ -2110,12 +2121,30 @@ impl Task {
                 );
             }
 
+            let scopes = match scopes {
+                TaskScopes::Root(root_scope) => {
+                    let job = backend.create_backend_job(Job::UnloadRootScope(root_scope));
+                    turbo_tasks.schedule_backend_foreground_job(job);
+                    None
+                }
+                TaskScopes::Inner(scopes, counter) => {
+                    if scopes.is_unset() {
+                        None
+                    } else {
+                        Some(TaskScopes::Inner(scopes, counter))
+                    }
+                }
+            };
             // TODO maybe None, depending on scopes
             let id = self.id;
-            *state = TaskMetaState::Partial(box PartialTaskState {
-                event: Event::new(move || format!("TaskState({id})::event")),
-                scopes,
-            });
+            if let Some(scopes) = scopes {
+                *state = TaskMetaState::Partial(box PartialTaskState {
+                    event: Event::new(move || format!("TaskState({id})::event")),
+                    scopes,
+                });
+            } else {
+                *state = TaskMetaState::None;
+            }
             drop(state);
 
             // Notify everyone that is listening on our output or cells.

@@ -391,6 +391,22 @@ impl TaskScope {
             dependent_tasks.remove(&reader);
         }
     }
+
+    pub(crate) fn assert_unused(&self) {
+        // This method checks if everything was cleaned up correctly
+        // no more tasks should be attached to this scope in any way
+
+        assert_eq!(self.tasks.load(Ordering::Relaxed), 0);
+        assert_eq!(self.unfinished_tasks.load(Ordering::Relaxed), 0);
+        let state = self.state.lock();
+        assert!(state.dependent_tasks.is_empty());
+        assert!(state.collectibles.is_empty());
+        assert!(state.dirty_tasks.is_empty());
+        assert!(state.children.is_empty());
+        assert!(state.parents.is_empty());
+        assert!(!state.has_unfinished_tasks);
+        assert_eq!(state.active, 0);
+    }
 }
 
 pub struct ScopeChildChangeEffect {
