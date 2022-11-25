@@ -1,78 +1,91 @@
 use std::{
     alloc::{GlobalAlloc, Layout},
     ptr,
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 /// Turbo's preferred global allocator. This is a new type instead of a type
 /// alias because you can't use type aliases to instantiate unit types (E0423).
 pub struct TurboMalloc;
 
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 impl TurboMalloc {
-    pub fn collect() {
-        unsafe {
-            libmimalloc_sys::mi_collect(false);
-        }
-    }
-
-    pub fn print_stats() {
-        unsafe {
-            libmimalloc_sys::mi_stats_print(ptr::null_mut());
-        }
-    }
-
     pub fn memory_usage() -> usize {
-        let mut current_commit: usize = 0;
-        unsafe {
-            libmimalloc_sys::mi_process_info(
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                ptr::null_mut(),
-                &mut current_commit as *mut _,
-                ptr::null_mut(),
-                ptr::null_mut(),
-            );
-        }
-        current_commit
+        ALLOCATED.load(Ordering::Relaxed)
     }
 }
+
+static ALLOCATED: AtomicUsize = AtomicUsize::new(0);
 
 #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 unsafe impl GlobalAlloc for TurboMalloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        mimalloc::MiMalloc.alloc(layout)
+        let ret = mimalloc::MiMalloc.alloc(layout);
+        if !ret.is_null() {
+            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ret
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        mimalloc::MiMalloc.dealloc(ptr, layout)
+        mimalloc::MiMalloc.dealloc(ptr, layout);
+        ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        mimalloc::MiMalloc.alloc_zeroed(layout)
+        let ret = mimalloc::MiMalloc.alloc_zeroed(layout);
+        if ret.is_null() {
+            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ret
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        mimalloc::MiMalloc.realloc(ptr, layout, new_size)
+        let ret = mimalloc::MiMalloc.realloc(ptr, layout, new_size);
+        if !ret.is_null() {
+            let old_size = layout.size();
+            if old_size < new_size {
+                ALLOCATED.fetch_add(new_size - old_size, Ordering::Relaxed);
+            } else {
+                ALLOCATED.fetch_sub(old_size - new_size, Ordering::Relaxed);
+            }
+        }
+        ret
     }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
 unsafe impl GlobalAlloc for TurboMalloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        std::alloc::System.alloc(layout)
+        let ret = std::alloc::System.alloc(layout);
+        if !ret.is_null() {
+            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ret
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        std::alloc::System.dealloc(ptr, layout)
+        std::alloc::System.dealloc(ptr, layout);
+        ALLOCATED.fetch_sub(layout.size(), Ordering::Relaxed);
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        std::alloc::System.alloc_zeroed(layout)
+        let ret = std::alloc::System.alloc_zeroed(layout);
+        if ret.is_null() {
+            ALLOCATED.fetch_add(layout.size(), Ordering::Relaxed);
+        }
+        ret
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        std::alloc::System.realloc(ptr, layout, new_size)
+        let ret = std::alloc::System.realloc(ptr, layout, new_size);
+        if !ret.is_null() {
+            let old_size = layout.size();
+            if old_size < new_size {
+                ALLOCATED.fetch_add(new_size - old_size, Ordering::Relaxed);
+            } else {
+                ALLOCATED.fetch_sub(old_size - new_size, Ordering::Relaxed);
+            }
+        }
+        ret
     }
 }

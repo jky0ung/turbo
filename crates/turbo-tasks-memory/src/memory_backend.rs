@@ -346,7 +346,6 @@ impl MemoryBackend {
             let _ = self.gc_queue.push(id);
         }
 
-        turbo_malloc::TurboMalloc::collect();
         let new_usage = turbo_malloc::TurboMalloc::memory_usage();
         println!(
             "GC collected {}/{} items of {}/{} tasks  {:.3} GB -> {:.3} GB ({} tasks in queue)",
