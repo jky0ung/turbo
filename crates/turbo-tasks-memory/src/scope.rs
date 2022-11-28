@@ -577,6 +577,23 @@ impl TaskScopeState {
         log_scope_update!("remove_dirty_task {} -> {}", *self.id, *id);
     }
 
+    /// Takes all children or collectibles dependent tasks and returns them for
+    /// notification.
+    pub fn take_all_dependent_tasks(&mut self) -> AutoSet<TaskId> {
+        let mut set = self.take_dependent_tasks();
+        self.collectibles = take(&mut self.collectibles)
+            .into_iter()
+            .map(|(key, (collectibles, mut dependent_tasks))| {
+                set.extend(take(&mut dependent_tasks));
+                (key, (collectibles, dependent_tasks))
+            })
+            .filter(|(_, (collectibles, dependent_tasks))| {
+                !collectibles.is_unset() || !dependent_tasks.is_empty()
+            })
+            .collect();
+        set
+    }
+
     /// Adds a colletible to the scope.
     /// Returns true when it was initially added and dependent_tasks should be
     /// notified.
