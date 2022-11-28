@@ -318,9 +318,10 @@ impl MemoryBackend {
                     / (MEM_LIMIT - LOWER_MEM_TARGET),
             ) / 100;
         items.truncate(collect_count);
-        let collect_count = items.len();
 
         let mut collected_tasks = 0;
+        let mut unloaded_tasks = 0;
+        let mut cells_removed_tasks = 0;
         if !items.is_empty() {
             items.sort_by(GcItem::cmp_task);
             let mut current_task = items[0].task();
@@ -332,9 +333,11 @@ impl MemoryBackend {
                     self.with_task(current_task, |task| {
                         if current_unload {
                             if task.unload(self, turbo_tasks) {
+                                unloaded_tasks += 1;
                                 return;
                             }
                         }
+                        cells_removed_tasks += 1;
                         task.gc(current_unread, &current_cells);
                     });
                 };
@@ -364,8 +367,10 @@ impl MemoryBackend {
 
         let new_usage = turbo_malloc::TurboMalloc::memory_usage();
         println!(
-            "GC collected {}/{} items of {}/{} tasks  {:.3} GB -> {:.3} GB ({} tasks in queue)",
-            collect_count,
+            "GC: {} unloaded + {} collected tasks of {} possible actions of {}/{} tasks  {:.3} GB \
+             -> {:.3} GB ({} tasks in queue)",
+            unloaded_tasks,
+            cells_removed_tasks,
             len,
             collected_tasks,
             inspected_task_count,
