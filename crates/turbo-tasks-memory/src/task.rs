@@ -13,7 +13,7 @@ use std::{
 
 use anyhow::Result;
 use auto_hash_map::{AutoMap, AutoSet};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::{Mutex, RwLock, RwLockWriteGuard};
 use tokio::task_local;
 use turbo_tasks::{
     backend::PersistentTaskType,
@@ -234,6 +234,14 @@ impl<'a> TaskMetaStateWriteGuard<'a> {
                 "TaskMetaStateWriteGuard::scopes_and_children must be called with at least a \
                  partial state"
             ),
+        }
+    }
+
+    fn into_inner(self) -> RwLockWriteGuard<'a, TaskMetaState> {
+        match self {
+            TaskMetaStateWriteGuard::Full(state) => state.into_inner(),
+            TaskMetaStateWriteGuard::Partial(state) => state.into_inner(),
+            TaskMetaStateWriteGuard::None(state) => state.into_inner(),
         }
     }
 }
@@ -697,7 +705,7 @@ impl Task {
                 let id = self.id;
                 *guard = TaskMetaState::Partial(box PartialTaskState {
                     event: Event::new(move || format!("TaskState({id})::event")),
-                    scopes: TaskScopes::Inner(CountHashSet::new(), 0),
+                    scopes: TaskScopes::default(),
                 });
                 TaskMetaStateWriteGuard::Partial(WriteGuard::new(
                     guard,
@@ -908,9 +916,7 @@ impl Task {
                 for scope in scopes.iter().take(processed_scopes) {
                     backend.with_scope(scope, |scope| {
                         let mut state = scope.state.lock();
-                        if !state.is_active() {
-                            state.remove_dirty_task(self.id);
-                        }
+                        state.remove_dirty_task(self.id);
                     })
                 }
                 return true;
@@ -1238,6 +1244,7 @@ impl Task {
         queue: &mut VecDeque<TaskId>,
     ) {
         let mut state = self.partial_state_mut();
+        let partial = matches!(state, TaskMetaStateWriteGuard::Partial(_));
         let (scopes, children) = state.scopes_and_children();
         match scopes {
             &mut TaskScopes::Root(root) => {
@@ -1248,22 +1255,53 @@ impl Task {
                         parent,
                     }) = backend.with_scope(id, |scope| scope.state.lock().remove_child(root))
                     {
-                        drop(state);
+                        if partial && parent {
+                            // We might be able to drop the root scope now
+                            // Check if this was the last parent that is removed
+                            // (We operate under the task lock to ensure no other thread is adding a
+                            // new parent)
+                            backend.with_scope(root, |child| {
+                                if child.remove_parent(id, backend) {
+                                    if let TaskMetaState::Partial(state) =
+                                        replace(&mut *state.into_inner(), TaskMetaState::None)
+                                    {
+                                        state.event.notify(usize::MAX);
+                                        child.decrement_unfinished_tasks(backend);
+                                        {
+                                            // Partial tasks are always dirty
+                                            let mut child = child.state.lock();
+                                            child.remove_dirty_task(self.id);
+                                        }
+
+                                        // Now this root scope is eventually no longer referenced
+                                        // and we can unload it, once all foreground jobs are done
+                                        // since there might be ongoing add/remove scopes.
+                                        let job =
+                                            backend.create_backend_job(Job::UnloadRootScope(root));
+                                        turbo_tasks.schedule_backend_foreground_job(job);
+                                    } else {
+                                        unreachable!("partial is set so it must be Partial");
+                                    }
+                                }
+                            });
+                        } else {
+                            drop(state);
+                        }
                         if !notify.is_empty() {
                             turbo_tasks.schedule_notify_tasks_set(&notify);
                         }
                         if active {
                             backend.decrease_scope_active(root, turbo_tasks);
                         }
-                        if parent {
+                        if !partial && parent {
                             backend.with_scope(root, |child| {
                                 child.remove_parent(id, backend);
-                            })
+                            });
                         }
                     }
                 }
             }
-            TaskScopes::Inner(ref mut set, _) => {
+            TaskScopes::Inner(set, _) => {
                 if set.remove(id) {
                     if queue.capacity() == 0 {
                         queue.reserve(max(children.len(), SPLIT_OFF_QUEUE_AT * 2));
@@ -1656,9 +1694,10 @@ impl Task {
                 last_duration: Duration::ZERO,
                 executions: 0,
                 root_scoped: false,
-                child_scopes: match state.scopes {
-                    TaskScopes::Root(_) => 1,
-                    TaskScopes::Inner(ref list, _) => list.len(),
+                child_scopes: if let TaskScopes::Inner(ref set, _) = state.scopes {
+                    set.len()
+                } else {
+                    0
                 },
                 active: false,
             },
@@ -2122,32 +2161,21 @@ impl Task {
                 );
             }
 
-            let scopes = match scopes {
-                TaskScopes::Root(root_scope) => {
-                    backend.with_scope(root_scope, |scope| {
-                        scope.decrement_tasks();
-                    });
-                    let job = backend.create_backend_job(Job::UnloadRootScope(root_scope));
-                    turbo_tasks.schedule_backend_foreground_job(job);
-                    None
-                }
-                TaskScopes::Inner(scopes, counter) => {
-                    if scopes.is_unset() {
-                        None
-                    } else {
-                        Some(TaskScopes::Inner(scopes, counter))
-                    }
-                }
+            let unset = if let TaskScopes::Inner(ref scopes, _) = scopes {
+                scopes.is_unset()
+            } else {
+                false
             };
+
             // TODO maybe None, depending on scopes
             let id = self.id;
-            if let Some(scopes) = scopes {
+            if unset {
+                *state = TaskMetaState::None;
+            } else {
                 *state = TaskMetaState::Partial(box PartialTaskState {
                     event: Event::new(move || format!("TaskState({id})::event")),
                     scopes,
                 });
-            } else {
-                *state = TaskMetaState::None;
             }
             drop(state);
 

@@ -112,6 +112,7 @@ impl<'a> Iterator for TaskScopesIterator<'a> {
     }
 }
 
+#[derive(Debug)]
 pub struct TaskScope {
     #[cfg(feature = "print_scope_updates")]
     pub id: TaskScopeId,
@@ -129,6 +130,7 @@ pub struct TaskScope {
     pub state: Mutex<TaskScopeState>,
 }
 
+#[derive(Debug)]
 pub struct TaskScopeState {
     #[cfg(feature = "print_scope_updates")]
     pub id: TaskScopeId,
@@ -147,7 +149,7 @@ pub struct TaskScopeState {
     /// done
     event: Event,
     /// All parent scopes
-    parents: CountHashSet<TaskScopeId, BuildNoHashHasher<TaskScopeId>>,
+    pub parents: CountHashSet<TaskScopeId, BuildNoHashHasher<TaskScopeId>>,
     /// Tasks that have read children
     /// When they change these tasks are invalidated
     dependent_tasks: AutoSet<TaskId>,
@@ -266,12 +268,15 @@ impl TaskScope {
         });
     }
 
-    pub fn remove_parent(&self, parent: TaskScopeId, backend: &MemoryBackend) {
-        {
+    /// Removes a parent from this scope, returns true if the scope parents are
+    /// now empty and unset
+    pub fn remove_parent(&self, parent: TaskScopeId, backend: &MemoryBackend) -> bool {
+        let result = {
             let mut state = self.state.lock();
             if !state.parents.remove(parent) || !state.has_unfinished_tasks {
-                return;
+                return state.parents.is_unset();
             }
+            state.parents.is_unset()
         };
         // As we removed a parent while having unfinished tasks we need to decrement the
         // unfinished task count and potentially update the state
@@ -282,6 +287,7 @@ impl TaskScope {
                 parent.update_unfinished_state(backend);
             }
         });
+        result
     }
 
     fn update_unfinished_state(&self, backend: &MemoryBackend) {
@@ -400,16 +406,52 @@ impl TaskScope {
         // This method checks if everything was cleaned up correctly
         // no more tasks should be attached to this scope in any way
 
-        assert_eq!(self.tasks.load(Ordering::Relaxed), 0);
-        assert_eq!(self.unfinished_tasks.load(Ordering::Relaxed), 0);
+        println!("assert_unused {:?} {:?}", self, self.state.lock());
+        assert_eq!(
+            self.tasks.load(Ordering::Acquire),
+            0,
+            "Scope tasks not correctly cleaned up"
+        );
+        assert_eq!(
+            self.unfinished_tasks.load(Ordering::Acquire),
+            0,
+            "Scope unfinished tasks not correctly cleaned up"
+        );
         let state = self.state.lock();
-        assert!(state.dependent_tasks.is_empty());
-        assert!(state.collectibles.is_empty());
-        assert!(state.dirty_tasks.is_empty());
-        assert!(state.children.is_empty());
-        assert!(state.parents.is_empty());
-        assert!(!state.has_unfinished_tasks);
-        assert_eq!(state.active, 0);
+        assert!(
+            state.dependent_tasks.is_empty(),
+            "Scope dependent tasks not correctly cleaned up: {:?}",
+            state.dependent_tasks
+        );
+        assert!(
+            state.collectibles.is_empty(),
+            "Scope collectibles not correctly cleaned up: {:?}",
+            state.collectibles
+        );
+        assert!(
+            state.dirty_tasks.is_empty(),
+            "Scope dirty tasks not correctly cleaned up: {:?}",
+            state.dirty_tasks
+        );
+        assert!(
+            state.children.is_empty(),
+            "Scope children not correctly cleaned up: {:?}",
+            state.children
+        );
+        assert!(
+            state.parents.is_empty(),
+            "Scope parents not correctly cleaned up: {:?}",
+            state.parents
+        );
+        assert!(
+            !state.has_unfinished_tasks,
+            "Scope has unfinished tasks not correctly cleaned up"
+        );
+        assert_eq!(
+            state.active, 0,
+            "Scope active not correctly cleaned up: {}",
+            state.active
+        );
     }
 }
 
@@ -432,7 +474,10 @@ impl TaskScopeState {
     /// scheduled and list of child scope that need to be incremented after
     /// releasing the scope lock
     #[must_use]
-    pub fn increment_active(&mut self, more_jobs: &mut Vec<TaskScopeId>) -> Option<Vec<TaskId>> {
+    pub fn increment_active(
+        &mut self,
+        more_jobs: &mut Vec<TaskScopeId>,
+    ) -> Option<AutoSet<TaskId>> {
         self.increment_active_by(1, more_jobs)
     }
     /// increments the active counter, returns list of tasks that need to be
@@ -443,12 +488,12 @@ impl TaskScopeState {
         &mut self,
         count: usize,
         more_jobs: &mut Vec<TaskScopeId>,
-    ) -> Option<Vec<TaskId>> {
+    ) -> Option<AutoSet<TaskId>> {
         let was_zero = self.active <= 0;
         self.active += count as isize;
         if self.active > 0 && was_zero {
             more_jobs.extend(self.children.iter().copied());
-            Some(self.dirty_tasks.iter().copied().collect())
+            Some(take(&mut self.dirty_tasks))
         } else {
             None
         }

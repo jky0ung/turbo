@@ -200,7 +200,7 @@ impl MemoryBackend {
         self.gc_queue.push(task).unwrap();
     }
 
-    pub fn run_gc(&self, turbo_tasks: &dyn TurboTasksBackendApi) {
+    pub fn run_gc(&self, idle: bool, turbo_tasks: &dyn TurboTasksBackendApi) {
         const MAX_TASKS_TO_CHECK: usize = 1000000;
         const INCREMENT: usize = 100000;
         const MAX_COLLECT_PERCENTAGE: usize = 30;
@@ -211,25 +211,36 @@ impl MemoryBackend {
         #[cfg(debug_assertions)]
         const LOWER_MEM_TARGET: usize = 300 * MB;
         #[cfg(debug_assertions)]
+        const IDLE_UPPER_MEM_TARGET: usize = 600 * MB;
+        #[cfg(debug_assertions)]
         const UPPER_MEM_TARGET: usize = 1000 * MB;
         #[cfg(debug_assertions)]
         const MEM_LIMIT: usize = 2000 * MB;
 
         #[cfg(not(debug_assertions))]
-        const LOWER_MEM_TARGET: usize = 3 * GB;
+        const LOWER_MEM_TARGET: usize = 2 * GB;
+        #[cfg(not(debug_assertions))]
+        const IDLE_UPPER_MEM_TARGET: usize = 3 * GB;
         #[cfg(not(debug_assertions))]
         const UPPER_MEM_TARGET: usize = 4 * GB;
         #[cfg(not(debug_assertions))]
-        const MEM_LIMIT: usize = 8 * GB;
+        const MEM_LIMIT: usize = 6 * GB;
 
         let usage = turbo_malloc::TurboMalloc::memory_usage();
 
-        if usage < UPPER_MEM_TARGET {
-            println!(
-                "No GC needed {:.3} GB ({} tasks in queue)",
-                (usage / 1000_000) as f32 / 1000.0,
-                self.gc_queue.len()
-            );
+        let target = if idle {
+            IDLE_UPPER_MEM_TARGET
+        } else {
+            UPPER_MEM_TARGET
+        };
+        if usage < target {
+            if idle {
+                println!(
+                    "No GC needed {:.3} GB ({} tasks in queue)",
+                    (usage / 1000_000) as f32 / 1000.0,
+                    self.gc_queue.len()
+                );
+            }
             return;
         }
 
@@ -379,17 +390,17 @@ impl MemoryBackend {
         //     std::mem::size_of::<Job>() * self.backend_jobs.capacity() / 1024
         // );
 
-        // if inspected_task_count > 0 {
-        let job = self.create_backend_job(Job::GarbaggeCollection);
-        turbo_tasks.schedule_backend_background_job(job);
-        // }
+        if idle {
+            let job = self.create_backend_job(Job::GarbaggeCollection);
+            turbo_tasks.schedule_backend_background_job(job);
+        }
     }
 }
 
 impl Backend for MemoryBackend {
     fn idle_start(&self, turbo_tasks: &dyn TurboTasksBackendApi) {
-        // let job = self.create_backend_job(Job::GarbaggeCollection);
-        // turbo_tasks.schedule_backend_background_job(job);
+        let job = self.create_backend_job(Job::GarbaggeCollection);
+        turbo_tasks.schedule_backend_background_job(job);
     }
 
     fn invalidate_task(
@@ -461,9 +472,13 @@ impl Backend for MemoryBackend {
         duration: Duration,
         turbo_tasks: &dyn TurboTasksBackendApi,
     ) -> bool {
-        self.with_task(task_id, |task| {
+        let reexecute = self.with_task(task_id, |task| {
             task.execution_completed(duration, self, turbo_tasks)
-        })
+        });
+        if !reexecute {
+            self.run_gc(false, turbo_tasks);
+        }
+        reexecute
     }
 
     fn try_read_task_output(
@@ -761,7 +776,7 @@ impl Backend for MemoryBackend {
 pub(crate) enum Job {
     RemoveFromScopes(AutoSet<TaskId>, Vec<TaskScopeId>),
     RemoveFromScope(AutoSet<TaskId>, TaskScopeId),
-    ScheduleWhenDirtyFromScope(Vec<TaskId>, &'static str),
+    ScheduleWhenDirtyFromScope(AutoSet<TaskId>, &'static str),
     /// Add tasks from a scope. Scheduled by `run_add_from_scope_queue` to
     /// split off work.
     AddToScopeQueue(VecDeque<(TaskId, usize)>, TaskScopeId, bool, &'static str),
@@ -823,7 +838,7 @@ impl Job {
                 }
             }
             Job::GarbaggeCollection => {
-                backend.run_gc(turbo_tasks);
+                backend.run_gc(true, turbo_tasks);
             }
         }
     }
