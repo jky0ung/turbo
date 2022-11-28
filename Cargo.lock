@@ -208,6 +208,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "auto-hash-map"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "auto_impl"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6368,6 +6375,7 @@ version = "0.1.0"
 dependencies = [
  "any_key",
  "anyhow",
+ "auto-hash-map",
  "bitflags",
  "concurrent-queue",
  "dashmap",
@@ -6426,6 +6434,7 @@ name = "turbo-tasks-fs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "auto-hash-map",
  "bitflags",
  "bytes",
  "concurrent-queue",
@@ -6489,6 +6498,7 @@ name = "turbo-tasks-memory"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "auto-hash-map",
  "concurrent-queue",
  "criterion",
  "dashmap",
@@ -6510,6 +6520,7 @@ name = "turbo-tasks-testing"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "auto-hash-map",
  "lazy_static",
  "tokio",
  "turbo-tasks",
@@ -6575,6 +6586,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "auto-hash-map",
  "browserslist-rs",
  "futures",
  "indexmap",
