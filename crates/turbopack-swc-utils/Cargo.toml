@@ -10,9 +10,9 @@ autobenches = false
 bench = false
 
 [dependencies]
-anyhow = "1.0.47"
-async-trait = "0.1.56"
-turbo-tasks = { path = "../turbo-tasks" }
+anyhow         = "1.0.47"
+async-trait    = "0.1.56"
+turbo-tasks    = { path = "../turbo-tasks" }
 turbo-tasks-fs = { path = "../turbo-tasks-fs" }
 turbopack-core = { path = "../turbopack-core" }
 
