@@ -300,7 +300,8 @@ impl<B: Backend> TurboTasks<B> {
 
     /// Call a native function with arguments.
     /// All inputs must be resolved.
-    pub(crate) fn native_call(&self, func: FunctionId, inputs: Vec<TaskInput>) -> RawVc {
+    pub(crate) fn native_call(&self, func: FunctionId, mut inputs: Vec<TaskInput>) -> RawVc {
+        inputs.shrink_to_fit();
         let (id, reason) = current_task_and_reason("turbo_function calls");
         RawVc::TaskOutput(self.backend.get_or_create_persistent_task(
             PersistentTaskType::Native(func, inputs),
@@ -312,10 +313,11 @@ impl<B: Backend> TurboTasks<B> {
 
     /// Calls a native function with arguments. Resolves arguments when needed
     /// with a wrapper [Task].
-    pub fn dynamic_call(&self, func: FunctionId, inputs: Vec<TaskInput>) -> RawVc {
+    pub fn dynamic_call(&self, func: FunctionId, mut inputs: Vec<TaskInput>) -> RawVc {
         if inputs.iter().all(|i| i.is_resolved() && !i.is_nothing()) {
             self.native_call(func, inputs)
         } else {
+            inputs.shrink_to_fit();
             let (id, reason) = current_task_and_reason("turbo_function calls");
             RawVc::TaskOutput(self.backend.get_or_create_persistent_task(
                 PersistentTaskType::ResolveNative(func, inputs),
@@ -332,7 +334,7 @@ impl<B: Backend> TurboTasks<B> {
         &self,
         trait_type: TraitTypeId,
         mut trait_fn_name: Cow<'static, str>,
-        inputs: Vec<TaskInput>,
+        mut inputs: Vec<TaskInput>,
     ) -> RawVc {
         // avoid creating a wrapper task if self is already resolved
         // for resolved cells we already know the value type so we can lookup the
@@ -348,6 +350,7 @@ impl<B: Backend> TurboTasks<B> {
         }
 
         // create a wrapper task to resolve all inputs
+        inputs.shrink_to_fit();
         let (id, reason) = current_task_and_reason("turbo_function calls");
         RawVc::TaskOutput(self.backend.get_or_create_persistent_task(
             PersistentTaskType::ResolveTrait(trait_type, trait_fn_name, inputs),
