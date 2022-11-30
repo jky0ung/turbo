@@ -50,7 +50,7 @@ pub fn rectangle(text: &str) {
         .iter()
         .map(|line| utils::get_display_length(line).unwrap())
         .collect();
-    let longest_line = lines_display_width.iter().max().unwrap().to_owned();
+    let longest_line = lines_display_width.iter().max().copied().unwrap_or_default();
     let full_message_width = longest_line + PADDING;
 
     // handle smaller viewports
