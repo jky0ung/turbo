@@ -85,7 +85,7 @@ pub fn rectangle(text: &str) {
                 if line_display_width == 0 {
                     println!("{}", SPACE.repeat(term_width));
                 } else {
-                    let line_padding = (term_width - lines_display_width[idx]) / 2;
+                    let line_padding = (term_width - line_display_width) / 2;
                     // for lines of odd length, tack the reminder to the end
                     let line_padding_remainder =
                         term_width - (line_padding * 2) - lines_display_width[idx];
