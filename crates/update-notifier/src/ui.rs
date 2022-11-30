@@ -42,7 +42,7 @@ fn x_border(width: usize, position: BorderAlignment) {
     }
 }
 
-pub fn rectangle(text: &str) {
+pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
     let size = terminal_size();
     let lines: Vec<&str> = text.split("\n").map(|line| line.trim()).collect();
     // get the display width of each line so we can center it within the box later
