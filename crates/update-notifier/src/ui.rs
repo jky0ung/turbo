@@ -3,7 +3,8 @@ use terminal_size::{terminal_size, Width};
 
 mod utils;
 
-const PADDING: usize = 8;
+const DEFAULT_PADDING: usize = 8;
+
 const TOP_LEFT: &str = "╭";
 const TOP_RIGHT: &str = "╮";
 const BOTTOM_LEFT: &str = "╰";
@@ -42,7 +43,7 @@ fn x_border(width: usize, position: BorderAlignment) {
     }
 }
 
-pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
+pub fn rectangle(text: &str) {
     let size = terminal_size();
     let lines: Vec<&str> = text.split("\n").map(|line| line.trim()).collect();
     // get the display width of each line so we can center it within the box later
@@ -50,12 +51,15 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
         .iter()
         .map(|line| utils::get_display_length(line).unwrap())
         .collect();
-    let longest_line = lines_display_width.iter().max().copied().unwrap_or_default();
-    let full_message_width = longest_line + PADDING;
+    let longest_line = lines_display_width
+        .iter()
+        .max()
+        .copied()
+        .unwrap_or_default();
+    let full_message_width = longest_line + DEFAULT_PADDING;
 
     // handle smaller viewports
     if let Some((Width(term_width), _)) = size {
-        // we can't fit the box, so don't show it
         let term_width = usize::from(term_width) - 2;
         let cant_fit_box = full_message_width >= term_width;
 
@@ -64,7 +68,7 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
             // top border
             x_border(term_width, BorderAlignment::Divider);
             for (line, line_display_width) in lines.iter().zip(lines_display_width.iter()) {
-                if line_display_width == 0 {
+                if *line_display_width == 0 {
                     println!("{}", SPACE.repeat(term_width));
                 } else {
                     println!("{}", line);
@@ -75,19 +79,18 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
             return;
         }
 
-        // can't fit the box, but we can still center text
+        // can't fit the box, but we can still center the text
         if cant_fit_box {
             // top border
             x_border(term_width, BorderAlignment::Divider);
-            for (idx, line) in lines.iter().enumerate() {
-                let line_display_width = lines_display_width[idx];
-                if line_display_width == 0 {
+            for (line, line_display_width) in lines.iter().zip(lines_display_width.iter()) {
+                if *line_display_width == 0 {
                     println!("{}", SPACE.repeat(term_width));
                 } else {
                     let line_padding = (term_width - line_display_width) / 2;
                     // for lines of odd length, tack the reminder to the end
                     let line_padding_remainder =
-                        term_width - (line_padding * 2) - lines_display_width[idx];
+                        term_width - (line_padding * 2) - line_display_width;
                     println!(
                         "{}{}{}",
                         SPACE.repeat(line_padding),
@@ -104,8 +107,8 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
 
     // full output
     x_border(full_message_width, BorderAlignment::Top);
-    for (idx, line) in lines.iter().enumerate() {
-        if line.len() == 0 {
+    for (line, line_display_width) in lines.iter().zip(lines_display_width.iter()) {
+        if *line_display_width == 0 {
             println!(
                 "{}{}{}",
                 VERTICAL.yellow(),
@@ -113,10 +116,10 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
                 VERTICAL.yellow()
             );
         } else {
-            let line_padding = (full_message_width - lines_display_width[idx]) / 2;
+            let line_padding = (full_message_width - line_display_width) / 2;
             // for lines of odd length, tack the reminder to the end
             let line_padding_remainder =
-                full_message_width - (line_padding * 2) - lines_display_width[idx];
+                full_message_width - (line_padding * 2) - line_display_width;
             println!(
                 "{}{}{}{}{}",
                 VERTICAL.yellow(),

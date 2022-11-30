@@ -12,7 +12,7 @@ struct NpmVersionData {
 
 const REGISTRY_URL: &str = "https://registry.npmjs.org";
 const DEFAULT_TAG: &str = "latest";
-const TIMEOUT: Duration = Duration::from_millis(800);
+const DEFAULT_TIMEOUT: Duration = Duration::from_millis(800);
 
 pub async fn get_latest_version(
     package: &str,
@@ -20,8 +20,8 @@ pub async fn get_latest_version(
     timeout: Option<Duration>,
 ) -> Result<String, UpdateNotifierError> {
     log::debug!("fetching latest version");
-    let tag = tag.unwrap_or_else(|| DEFAULT_TAG);
-    let timeout = timeout.unwrap_or_else(|| TIMEOUT);
+    let tag = tag.unwrap_or(DEFAULT_TAG);
+    let timeout = timeout.unwrap_or(DEFAULT_TIMEOUT);
     let client: Client = reqwest::Client::new();
     let url = format!("{}/{}/{}", REGISTRY_URL, package, tag);
     log::debug!("fetching {:?}", url);

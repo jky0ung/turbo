@@ -13,7 +13,7 @@ mod ui;
 mod utils;
 
 // default interval to check for new updates (one per day)
-const INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
+const DEFAULT_INTERVAL: Duration = Duration::from_secs(60 * 60 * 24);
 
 #[derive(Debug)]
 pub struct UpdateNotifier {
@@ -81,13 +81,14 @@ impl UpdateNotifier {
         let msg = format!(
             "
             Update available {} ≫ {}
-            Changelog: https://github.com/vercel/turbo/releases/tag/v{}Run \
-             \"{}\" to update
+            Changelog: {}/releases/tag/v{}
+            Run \"{}\" to update
 
             Follow {} for updates: {}
             ",
             &self.config.current_version.dimmed(),
             &latest_version.green().bold(),
+            "https://github.com/vercel/turbo",
             &latest_version,
             // TODO: make this package manager aware
             "npm i -g turbo".cyan().bold(),
@@ -106,7 +107,7 @@ impl UpdateNotifier {
                 latest_version: None,
                 last_checked: None,
             },
-            interval: interval.unwrap_or(INTERVAL),
+            interval: interval.unwrap_or(DEFAULT_INTERVAL),
             package,
             tag,
         }
@@ -121,7 +122,7 @@ impl UpdateNotifier {
             let file = match file {
                 Ok(f) => f,
                 Err(_) => {
-                    log::debug!("failed to open local config, writing first version");
+                    log::debug!("failed to read local config, writing first version");
                     return Self::first_run(package, tag, interval);
                 }
             };
@@ -138,7 +139,7 @@ impl UpdateNotifier {
                         },
                         package,
                         tag,
-                        interval: interval.unwrap_or(INTERVAL),
+                        interval: interval.unwrap_or(DEFAULT_INTERVAL),
                     }
                 }
                 Err(_) => {
