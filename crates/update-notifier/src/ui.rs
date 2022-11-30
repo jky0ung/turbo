@@ -63,8 +63,7 @@ pub fn rectangle(text: &str) -> Result<(), GetDisplayLengthError> {
         if cant_fit_box && longest_line > term_width {
             // top border
             x_border(term_width, BorderAlignment::Divider);
-            for (idx, line) in lines.iter().enumerate() {
-                let line_display_width = lines_display_width[idx];
+            for (line, line_display_width) in lines.iter().zip(lines_display_width.iter()) {
                 if line_display_width == 0 {
                     println!("{}", SPACE.repeat(term_width));
                 } else {
